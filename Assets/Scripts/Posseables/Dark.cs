@@ -1,7 +1,7 @@
 using UnityEngine;
 using Element.Interfaces;
 
-public class Dark : MonoBehaviour, IPossable
+public class Dark : MonoBehaviour, IPossable, IHorizontalMove
 {
     //こいつは
     public void TryPossess()
@@ -17,6 +17,10 @@ public class Dark : MonoBehaviour, IPossable
     public Transform Core => _core;
 
     public void Death()
+    {
+
+    }
+    public void XMove(float direction)
     {
 
     }
