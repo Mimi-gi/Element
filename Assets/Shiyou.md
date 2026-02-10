@@ -4,7 +4,7 @@
 
 ## 1. ゲーム概要
 
-**Element**は、様々なオブジェクトに乗り移って進む**2Dパズルプラットフォーマー**です。
+**Element**は、様々なオブジェクトに乗り移って進む**2Dパズルプラットフォーマー**。
 
 ### コンセプト
 - プレイヤーの本体は「**目（Dark）**」として表現される
@@ -22,7 +22,7 @@
 #### フォーカスモード
 - **起動**: ボタン長押し
 - **効果**: 
-  - ゲーム時間が減速（倍率は調整可能、デフォルト0.3倍）
+  - ゲーム時間が減速（デフォルト0.3倍）
   - 乗り移り可能なオブジェクトが視覚的にハイライト表示
   - 移動などの通常入力は無効化
 - **解除**: ボタンを離す
@@ -47,88 +47,220 @@
 ### 2.2 Dark（プレイヤー本体）
 
 - プレイヤーの本体である「目」
-- デフォルトのIPossable
+- デフォルトのIPossable、`IHorizontalMove`と`IGrounded`を実装
 - 他のオブジェクトに乗り移ると、古いDarkは自動で破棄される
-- Darkも死亡する可能性がある
+- **接地判定**: 両端（Inspector設定の相対位置）からRaycastAllで下方にレイを飛ばし、`IGround`を検出
+- **落下**: 非接地時は`_fallSpeed`で一定速度落下、接地時はY速度0
 
 #### リスポーン
 - 任意のIPossableが死亡すると、**DarkSource**の位置に新しいDarkが生成される
 - DarkSourceはステージごとに配置可能（複数存在可能）
 - StageManagerが現在アクティブなDarkSourceを管理
 
+### 2.3 接地システム
+
+#### IGround（マーカーインターフェース）
+接地判定の対象。コライダーを持つオブジェクトにアタッチするだけで、その上に乗れるようになる。
+
+**現在の実装クラス**: `Tile`, `Box`
+
+#### IGrounded
+接地が必要なオブジェクトが実装。
+```csharp
+public interface IGrounded
+{
+    bool IsGrounded { get; }
+    void ConfigureYVelocity(Rigidbody2D rb);
+}
+```
+
+**接地判定の仕組み**（Darkの場合）:
+- `Observable.EveryUpdate`で毎フレーム`CheckGround()`を実行
+- オブジェクトの両端（`_leftRayOffset`, `_rightRayOffset`）から`_rayLength`だけ下方にRaycastAll
+- ヒットしたすべてのコライダーで`IGround`をチェック
+- Gizmosでレイを可視化（接地=緑、非接地=赤）
+
 ---
 
 ## 3. 技術設計
 
-### 3.1 インターフェース設計
+### 3.1 アーキテクチャ概要
+
+```
+GameLifetimeScope (唯一のMonoBehaviour、エントリーポイント)
+├── Events (POCO Singleton)
+│   ├── GameStateEvents
+│   ├── PossessionEvents
+│   ├── FocusEvents
+│   ├── CameraEvents
+│   └── StageEvents
+├── Managers (POCO Singleton)
+│   ├── StageManager
+│   ├── GameStateManager
+│   ├── TimeManager
+│   ├── CameraController
+│   ├── InputProcessor
+│   └── PossessionManager
+└── GameBootstrap (POCO、初期化実行)
+```
+
+**設計方針**:
+- マネージャーはすべて**POCO**（`IDisposable`実装）
+- MonoBehaviourは**IPossable実装クラスのみ**
+- VContainerによる依存性注入、R3によるイベント駆動
+- `Instantiate`で生成されたオブジェクトには`IObjectResolver.Inject()`で注入
+
+### 3.2 インターフェース設計
 
 #### IPossable（基本インターフェース）
-
-すべての乗り移り可能なオブジェクトが実装。
-
 ```csharp
 public interface IPossable
 {
-    void TryPossess();           // 乗り移り入力通知
-    int Layer { get; }           // 独自レイヤーシステムの順序値
-    bool IsPossess { get; set; } // 現在乗り移られているか
-    Transform Core { get; }      // コア（視認性・距離判定用）
-    void Death();                // 死亡処理
+    void TryPossess();
+    int Layer { get; }
+    bool IsPossess { get; set; }
+    Transform Core { get; }
+    bool UseGravity { get; }
+    bool IsKinematicWhenNotPossessed { get; }
+    void Death();
 }
 ```
-
-**設計のポイント**：
-- `Core`は子オブジェクトとして実装
-- `Layer`は描画順序を明示的に指定（SortingLayerとは独立）
-- `IsPossess`がtrueの間のみ、そのオブジェクトは入力を受け付ける
 
 #### 能力インターフェース
-
-IPossableの能力を組み合わせ可能にするインターフェース群。
-
-**IHorizontalMovable** - 横移動
 ```csharp
-public interface IHorizontalMovable
-{
-    void MoveHorizontal(float direction); // -1:左, 1:右, 0:停止
-}
+public interface IHorizontalMove { void XMove(float direction); }
+public interface IVerticalMove   { void YMove(float direction); }
 ```
 
-**IVerticalMovable** - 縦移動
+### 3.3 イベントインターフェース
+
+| インターフェース | 内容 | 発行者 | 購読者 |
+|---|---|---|---|
+| `IGameStateEvents` | `ReactiveProperty<GameState>` | GameStateManager | InputProcessor, PossessionManager |
+| `IPossessionEvents` | `CurrentPossessed`, `OnPossessionChanged`, `OnPossessableDeath` | PossessionManager | CameraController |
+| `IFocusEvents` | `OnFocusModeChanged` | InputProcessor | TimeManager, PossessionManager |
+| `ICameraEvents` | `OnCameraTransition` | CameraController | TimeManager |
+| `IStageEvents` | `ActiveDarkSource`, `OnActiveAreaChanged` | StageManager | PossessionManager, CameraController |
+
+### 3.4 マネージャー一覧
+
+| マネージャー | 責務 | 入力方式 |
+|---|---|---|
+| **InputProcessor** | 入力をR3ストリームで配信 | `Observable.EveryUpdate`でポーリング |
+| **GameStateManager** | ゲーム状態管理 | メソッド呼び出し |
+| **PossessionManager** | 乗り移り管理＋リスポーン | イベント購読 |
+| **CameraController** | カメラ移動（LitMotion） | イベント購読 |
+| **TimeManager** | `Time.timeScale`制御 | イベント購読 |
+| **StageManager** | DarkSource管理 | メソッド呼び出し |
+
+### 3.5 InputProcessor（EveryUpdateポーリング）
+
 ```csharp
-public interface IVerticalMovable
+Observable.EveryUpdate().Subscribe(_ =>
 {
-    void MoveVertical(float direction); // -1:下, 1:上, 0:停止
-}
+    _move.Value = _moveAction.ReadValue<Vector2>();           // 連続値
+    if (_possessAction.WasPressedThisFrame()) ...             // トリガー
+    if (_jumpAction.WasPressedThisFrame()) ...                // トリガー
+    // Focus: IsPressed() + エッジ検出でホールド判定
+});
 ```
 
-**IJumpable** - ジャンプ
+**出力ストリーム**:
+- `Move` → `ReadOnlyReactiveProperty<Vector2>`
+- `PossessInput` → `Observable<Unit>`
+- `Jump` → `Observable<Unit>`
+
+### 3.6 VContainer登録（GameLifetimeScope）
+
+**Inspector設定項目**:
+| 項目 | 型 | 説明 |
+|---|---|---|
+| Main Camera | `Camera` | シーンのメインカメラ |
+| Input Asset | `InputActionAsset` | Player.inputactions |
+| Dark Prefab | `GameObject` | Dark.prefab |
+| Dark Sources | `DarkSource[]` | シーン内のDarkSource |
+
+**Instantiated オブジェクトへのDI**:
 ```csharp
-public interface IJumpable
-{
-    void Jump();
-}
+GameObject darkObj = Object.Instantiate(_darkPrefab, spawnPos, Quaternion.identity);
+Dark dark = darkObj.GetComponent<Dark>();
+_resolver.Inject(dark);  // [Inject] Construct() が呼ばれる
 ```
 
-**実装パターン**：
-```csharp
-public class Box : MonoBehaviour, IPossable, IHorizontalMovable, IJumpable
-{
-    void Start()
-    {
-        // IsPossess中のみ入力を受け付ける
-        InputProcessor.Instance.Move
-            .Where(_ => IsPossess)
-            .Subscribe(dir => MoveHorizontal(dir.x))
-            .AddTo(this);
-    }
-}
+---
+
+## 4. ゲームフロー
+
+### 初期化フロー
+```
+GameLifetimeScope.Awake()
+  → VContainer Build（Configure()で全POCO登録）
+  → GameBootstrap.InitializeGameAsync()
+    → StageManager.RegisterDarkSources()
+    → Instantiate(Dark) + Inject()
+    → PossessionManager.PossessTo(dark)
+    → CameraController.SetPosition()
+    → GameStateManager.ChangeState(Playing)
 ```
 
-#### IDoublable（分身システム）
+### フォーカス → 乗り移り
+```
+フォーカスボタン長押し
+  → InputProcessor → FocusEvents
+  → TimeManager: 時間減速（0.3倍）
+  → PossessionManager: 最適ターゲット選定
+  → 乗り移り入力
+  → PossessTo(target) → カメラ追従
+```
 
-二つに分かれることができるオブジェクト用。IPossableを継承。
+### 死亡 → リスポーン
+```
+IPossable.Death()
+  → PossessionManager.RespawnAsDark()
+  → Instantiate(Dark) + Inject()
+  → PossessTo(newDark)
+```
 
+---
+
+## 5. オブジェクト実装
+
+| オブジェクト | インターフェース | 説明 |
+|---|---|---|
+| **Dark** | `IPossable, IHorizontalMove, IGrounded` | プレイヤー本体。横移動＋接地判定。Layer=0 |
+| **Box** | `IPossable, IGround` | 踏める箱。乗り移り可能。Layer=1 |
+| **Tile** | `IGround` | 地形タイル。乗り移り不可 |
+
+### 将来追加予定
+| オブジェクト | 能力 |
+|---|---|
+| **Spring** | `IHorizontalMove, IJumpable` |
+| **Elevator** | `IVerticalMove` |
+| **Balloon** | `IHorizontalMove, IVerticalMove` |
+| **Rock** | `IPossable`のみ（移動不可） |
+
+---
+
+## 6. 技術スタック
+
+- **Unity 6000.3+** (URP)
+- **VContainer** - 依存性注入（DIコンテナ）
+- **R3** - リアクティブプログラミング（ReactiveProperty/Subject/Observable.EveryUpdate）
+- **LitMotion** - カメラ移動のトゥイーン
+- **Input System** - 入力管理（EveryUpdateでポーリング）
+- **UniTask** - 非同期処理
+
+---
+
+## 7. 今後の拡張可能性
+
+### 能力の追加
+- `IJumpable` - ジャンプ
+- `IDashable` - ダッシュ
+- `ISwimmable` - 水中移動
+- `IGlidable` - 滑空
+
+### IDoublable（分身システム）
 ```csharp
 public interface IDoublable : IPossable
 {
@@ -139,313 +271,8 @@ public interface IDoublable : IPossable
 }
 ```
 
-### 3.2 マネージャーアーキテクチャ（VContainer + R3）
-
-**設計方針**：
-- **VContainer**による依存性注入で柔軟な設計
-- **イベントを目的別に分離**し、神クラスを回避
-- 各マネージャーは必要なイベントインターフェースだけに依存
-- R3（ReactiveProperty/Subject）によるイベント駆動
-
-#### イベントインターフェース設計
-
-イベントを5つのインターフェースに分離：
-
-**IGameStateEvents** - ゲーム状態イベント
-```csharp
-public interface IGameStateEvents
-{
-    ReactiveProperty<GameState> CurrentGameState { get; }
-}
-```
-利用者: InputProcessor, TimeManager, PossessionManager
-
-**IPossessionEvents** - 乗り移りイベント
-```csharp
-public interface IPossessionEvents
-{
-    ReactiveProperty<IPossable> CurrentPossessed { get; }
-    Subject<PossessionChangeEvent> OnPossessionChanged { get; }
-    Subject<IPossable> OnPossessableDeath { get; }
-}
-```
-利用者: PossessionManager, CameraController
-
-**IFocusEvents** - フォーカスモードイベント
-```csharp
-public interface IFocusEvents
-{
-    Subject<bool> OnFocusModeChanged { get; }
-}
-```
-利用者: TimeManager, PossessionManager, InputProcessor
-
-**ICameraEvents** - カメラ遷移イベント
-```csharp
-public interface ICameraEvents
-{
-    Subject<CameraTransitionEvent> OnCameraTransition { get; }
-}
-```
-利用者: TimeManager, InputProcessor, CameraController
-
-**IStageEvents** - ステージ管理イベント
-```csharp
-public interface IStageEvents
-{
-    ReactiveProperty<DarkSource> ActiveDarkSource { get; }
-    Subject<DarkSource> OnActiveAreaChanged { get; }
-}
-```
-利用者: PossessionManager, StageManager
-
-#### マネージャー一覧
-
-| マネージャー | 責務 | 依存するイベント |
-|------------|------|----------------|
-| **GameStateManager** | ゲーム状態管理 | IGameStateEvents（発行） |
-| **PossessionManager** | 乗り移りシステム | IPossessionEvents, IStageEvents, IGameStateEvents |
-| **TimeManager** | Time.timeScale制御 | IFocusEvents, ICameraEvents |
-| **StageManager** | DarkSource管理 | IStageEvents（発行） |
-| **InputProcessor** | 入力管理と配信 | IGameStateEvents, IFocusEvents（発行） |
-| **CameraController** | カメラ制御 | IPossessionEvents, ICameraEvents（発行） |
-
-#### VContainer設定
-
-**GameLifetimeScope**でイベントとマネージャーを登録：
-
-```csharp
-public class GameLifetimeScope : LifetimeScope
-{
-    protected override void Configure(IContainerBuilder builder)
-    {
-        // イベント登録（Singleton）
-        builder.Register<IGameStateEvents, GameStateEvents>(Lifetime.Singleton);
-        builder.Register<IPossessionEvents, PossessionEvents>(Lifetime.Singleton);
-        builder.Register<IFocusEvents, FocusEvents>(Lifetime.Singleton);
-        builder.Register<ICameraEvents, CameraEvents>(Lifetime.Singleton);
-        builder.Register<IStageEvents, StageEvents>(Lifetime.Singleton);
-
-        // マネージャー登録
-        builder.RegisterComponentInHierarchy<GameStateManager>();
-        builder.RegisterComponentInHierarchy<PossessionManager>();
-        // ...
-    }
-}
-```
-
-#### 依存関係図（Mermaid）
-
-```mermaid
-classDiagram
-    %% イベントインターフェース
-    class IGameStateEvents {
-        <<interface>>
-        +ReactiveProperty~GameState~ CurrentGameState
-    }
-    
-    class IPossessionEvents {
-        <<interface>>
-        +ReactiveProperty~IPossable~ CurrentPossessed
-        +Subject~PossessionChangeEvent~ OnPossessionChanged
-        +Subject~IPossable~ OnPossessableDeath
-    }
-    
-    class IFocusEvents {
-        <<interface>>
-        +Subject~bool~ OnFocusModeChanged
-    }
-    
-    class ICameraEvents {
-        <<interface>>
-        +Subject~CameraTransitionEvent~ OnCameraTransition
-    }
-    
-    class IStageEvents {
-        <<interface>>
-        +ReactiveProperty~DarkSource~ ActiveDarkSource
-        +Subject~DarkSource~ OnActiveAreaChanged
-    }
-
-    %% マネージャー
-    class GameStateManager {
-        +ChangeState(GameState)
-    }
-    
-    class PossessionManager {
-        +PossessTo(IPossable)
-        +OnPossessableDeath(IPossable)
-        -RespawnAsDark()
-    }
-    
-    class TimeManager {
-        +SetTimeScale(float)
-        +EnterFocusMode()
-        +ExitFocusMode()
-    }
-    
-    class StageManager {
-        +SetActiveDarkSource(DarkSource)
-        +TransitionToArea(string)
-    }
-    
-    class InputProcessor {
-        +ReactiveProperty~Vector2~ Move
-        +Subject~Unit~ PossessInput
-        +Subject~Unit~ Jump
-    }
-    
-    class CameraController {
-        +MoveToArea(Transform, float, float)
-        +FollowTarget(Transform)
-    }
-
-    %% VContainer注入関係
-    IGameStateEvents <.. GameStateManager : publishes
-    IGameStateEvents <.. InputProcessor : subscribes
-    IGameStateEvents <.. PossessionManager : subscribes
-    
-    IPossessionEvents <.. PossessionManager : publishes
-    IPossessionEvents <.. CameraController : subscribes
-    
-    IFocusEvents <.. InputProcessor : publishes
-    IFocusEvents <.. TimeManager : subscribes
-    IFocusEvents <.. PossessionManager : subscribes
-    
-    ICameraEvents <.. CameraController : publishes
-    ICameraEvents <.. TimeManager : subscribes
-    
-    IStageEvents <.. StageManager : publishes
-    IStageEvents <.. PossessionManager : subscribes
-```
-
-#### 依存関係マトリックス
-
-| マネージャー | GameState | Possession | Focus | Camera | Stage |
-|------------|-----------|------------|-------|--------|-------|
-| **GameStateManager** | 🟢発行 | - | - | - | - |
-| **InputProcessor** | 🔵購読 | - | 🟢発行 | - | - |
-| **TimeManager** | - | - | 🔵購読 | 🔵購読 | - |
-| **PossessionManager** | 🔵購読 | 🟢発行 | 🔵購読 | - | 🔵購読 |
-| **StageManager** | - | - | - | - | 🟢発行 |
-| **CameraController** | - | 🔵購読 | - | 🟢発行 | - |
-
-**設計の特徴**：
-- ✅ **明示的な依存**: コンストラクタで依存が一目瞭然
-- ✅ **責務の分離**: イベントが目的別に整理
-- ✅ **神クラス回避**: 各マネージャーは必要な情報のみ参照
-- ✅ **テスト容易**: モックインターフェースで簡単にテスト可能
-- ✅ **拡張性**: 新しいイベントの追加が既存コードに影響しない
-
-
-
-### 3.3 コア視認性判定
-
-オブジェクトのコアが他のスプライトに覆われているかを判定。
-
-**検討中の実装方法**：
-1. **Physics Raycast**（プロトタイプ推奨）
-   - カメラからコアへRaycastを飛ばして遮蔽物をチェック
-   - シンプルで実装が容易
-   
-2. **SortingLayer/OrderInLayer**
-   - 描画順序を使った判定
-   - 視覚的に正確だが複雑
-   
-3. **カスタムレイヤーシステム**（本番推奨）
-   - IPossable.Layerを活用した独自判定
-   - 制御しやすく、パフォーマンスも良好
-
-**実装優先度**: プロトタイプはRaycast → 正式版はカスタムレイヤー
-
----
-
-## 4. ゲームフロー
-
-### フォーカス → 乗り移り
-
-```
-1. プレイヤーがフォーカスボタン長押し
-   ↓
-2. GameStateManager: FocusModeに遷移
-   ↓
-3. TimeManager: 時間を減速（0.3倍）
-   ↓
-4. PossessionManager: 最適ターゲットを選定・更新（毎フレーム）
-   ↓
-5. プレイヤーが乗り移り入力
-   ↓
-6. PossessionManager: PossessTo(最適ターゲット)
-   - 古いオブジェクトのIsPossess = false
-   - Darkなら破棄
-   - 新しいオブジェクトのIsPossess = true
-   ↓
-7. GameEvents: OnPossessionChangedイベント発行
-   ↓
-8. フォーカスモード終了 → 時間を通常に戻す
-```
-
-### 死亡 → リスポーン
-
-```
-1. IPossable.Death()が呼ばれる
-   ↓
-2. PossessionManager.OnPossessableDeath()
-   ↓
-3. StageManager.CurrentDarkSourceを取得
-   ↓
-4. DarkSourceの位置に新しいDarkを生成
-   ↓
-5. PossessionManager.PossessTo(新Dark)
-```
-
----
-
-## 5. オブジェクト実装例
-
-| オブジェクト | 能力 | 説明 |
-|------------|------|------|
-| **Dark（闇）** | `IHorizontalMovable` | プレイヤー本体。横移動のみ。すべての起点 |
-| **Spring（ばね）** | `IHorizontalMovable, IJumpable` | 横移動とジャンプが可能 |
-| **Box（箱）** | `IHorizontalMovable` | 横移動のみ。踏める（接地可能） |
-| **Elevator（エレベーター）** | `IVerticalMovable` | 縦移動のみ ※将来的にパス移動も検討 |
-| **Balloon（気球）** | `IHorizontalMovable, IVerticalMovable` | 横移動と縦移動が可能 |
-| **Rock（岩）** | `IPossable`のみ | 移動不可。重しとして使用 |
-
----
-
-## 6. 技術スタック
-
-- **Unity 6000.3+** (URP)
-- **C# 6000.0+**
-- **VContainer** - 依存性注入（DI）コンテナ
-- **R3** - リアクティブプログラミング（イベント駆動）
-- **LitMotion** - カメラ移動のトゥイーン
-- **Input System** - 入力管理
-- **UniTask** - 非同期処理
-
-- **VContainer** - 依存性注入
----
-
-## 7. 今後の拡張可能性
-
-### 能力の追加
-- `IDashable` - ダッシュ能力
-- `ISwimmable` - 水中移動
-- `IGlidable` - 滑空
-- `IPushable` - オブジェクトを押す。動かす
-
-### IDoublable活用
-- 二つに分かれて同時に操作
-- パズル要素として両方のコアを特定の位置に配置
-
 ### ステージギミック
-- ボタン/スイッチ（IPressable）
-- 動く床（IMovingPlatform）
+- ボタン/スイッチ
+- 動く床
 - ワープゾーン
 - 時間制限エリア
-
-
-#### 設計について
-- GameEventsが神クラスになっている。
-明らかに関係のないマネージャーもGameEventsを介して通信してしまっている。ので、必要な情報だけを取捨するようにできていない。フォーカスモード周りのイベントや、ステージ移動だけのイベントのから必要なものを適宜抜き取るという形にしたい、今のウニのような設計ではなく、より柔軟な設計にしたい。また、VContainerを使って依存性をより柔軟にできないか？

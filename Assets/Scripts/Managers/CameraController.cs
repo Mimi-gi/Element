@@ -1,6 +1,7 @@
 using UnityEngine;
-using VContainer;
+using System;
 using R3;
+using Cysharp.Threading.Tasks;
 using LitMotion;
 using LitMotion.Extensions;
 using Element.Events;
@@ -8,125 +9,146 @@ using Element.Events;
 namespace Element.Managers
 {
     /// <summary>
-    /// カメラを制御するマネージャー
+    /// カメラを制御するマネージャー（POCO）
+    /// Fixedモード・LitMotionベースの遷移のみ
     /// </summary>
-    public class CameraController : MonoBehaviour
+    public class CameraController : IDisposable
     {
-        [Header("Camera")]
-        [SerializeField] private Camera _camera;
-
-        [Header("Follow Settings")]
-        [SerializeField] private bool _followTarget = true;
-        [SerializeField] private float _followSpeed = 5f;
-
-        private CameraEvents _cameraEvents;
-        private IPossessionEvents _possessionEvents;
-        private Transform _targetTransform;
+        private readonly Camera _camera;
+        private readonly CameraEvents _cameraEvents;
         private readonly CompositeDisposable _disposables = new();
 
-        [Inject]
-        public void Construct(CameraEvents cameraEvents, IPossessionEvents possessionEvents)
+        private float _defaultTransitionDuration = 0.5f;
+        private Ease _transitionEase = Ease.InOutCubic;
+
+        public CameraController(
+            Camera camera,
+            CameraEvents cameraEvents,
+            IPossessionEvents possessionEvents,
+            IStageEvents stageEvents)
         {
+            _camera = camera;
             _cameraEvents = cameraEvents;
-            _possessionEvents = possessionEvents;
+
+            SubscribeToEvents(possessionEvents, stageEvents);
         }
 
-        private void Start()
+        private void SubscribeToEvents(IPossessionEvents possessionEvents, IStageEvents stageEvents)
         {
-            if (_camera == null)
-            {
-                _camera = Camera.main;
-            }
-
-            // Current Possessedを追従
-            _possessionEvents?.CurrentPossessed
+            // Possession変更時、カメラをターゲットに移動
+            possessionEvents?.CurrentPossessed
                 .Subscribe(possessed =>
                 {
                     if (possessed != null && possessed.Core != null)
                     {
-                        FollowTarget(possessed.Core);
+                        MoveToPositionAsync(possessed.Core.position, _defaultTransitionDuration).Forget();
+                    }
+                })
+                .AddTo(_disposables);
+
+            // ステージエリア変更時、カメラを移動
+            stageEvents?.OnActiveAreaChanged
+                .Subscribe(darkSource =>
+                {
+                    if (darkSource != null)
+                    {
+                        MoveToPositionAsync(darkSource.transform.position, _defaultTransitionDuration).Forget();
                     }
                 })
                 .AddTo(_disposables);
         }
 
-        private void LateUpdate()
+        /// <summary>
+        /// デフォルト遷移時間を設定
+        /// </summary>
+        public void SetDefaultTransitionDuration(float duration)
         {
-            if (_followTarget && _targetTransform != null)
-            {
-                Vector3 targetPos = _targetTransform.position;
-                targetPos.z = _camera.transform.position.z;
-
-                _camera.transform.position = Vector3.Lerp(
-                    _camera.transform.position,
-                    targetPos,
-                    Time.deltaTime * _followSpeed
-                );
-            }
+            _defaultTransitionDuration = duration;
         }
 
         /// <summary>
-        /// 指定エリアにカメラを移動
+        /// 遷移Easeを設定
         /// </summary>
-        public void MoveToArea(Transform targetTransform, float targetSize, float duration)
+        public void SetTransitionEase(Ease ease)
         {
-            if (targetTransform == null)
-            {
-                Debug.LogWarning("Target transform is null");
-                return;
-            }
+            _transitionEase = ease;
+        }
 
-            // 遷移開始イベント
+        /// <summary>
+        /// 指定位置にカメラを移動（LitMotion）
+        /// </summary>
+        public async UniTask MoveToPositionAsync(Vector3 targetPosition, float duration)
+        {
+            targetPosition.z = _camera.transform.position.z;
+
             _cameraEvents?.NotifyCameraTransition(new CameraTransitionEvent
             {
                 IsTransitioning = true,
-                TargetPosition = targetTransform.position,
+                TargetPosition = targetPosition,
                 Duration = duration
             });
 
-            Vector3 targetPos = targetTransform.position;
-            targetPos.z = _camera.transform.position.z;
+            await LMotion.Create(_camera.transform.position, targetPosition, duration)
+                .WithEase(_transitionEase)
+                .BindToPosition(_camera.transform)
+                .ToUniTask();
 
-            LMotion.Create(_camera.transform.position, targetPos, duration)
-                .WithEase(Ease.InOutCubic)
-                .WithOnComplete(() =>
-                {
-                    _cameraEvents?.NotifyCameraTransition(new CameraTransitionEvent
-                    {
-                        IsTransitioning = false,
-                        TargetPosition = targetPos,
-                        Duration = 0
-                    });
-                })
-                .BindToPosition(_camera.transform);
+            _cameraEvents?.NotifyCameraTransition(new CameraTransitionEvent
+            {
+                IsTransitioning = false,
+                TargetPosition = targetPosition,
+                Duration = 0
+            });
+        }
 
+        /// <summary>
+        /// 指定位置とサイズにカメラを移動（LitMotion）
+        /// </summary>
+        public async UniTask MoveToPositionWithSizeAsync(Vector3 targetPosition, float targetSize, float duration)
+        {
+            targetPosition.z = _camera.transform.position.z;
+
+            _cameraEvents?.NotifyCameraTransition(new CameraTransitionEvent
+            {
+                IsTransitioning = true,
+                TargetPosition = targetPosition,
+                Duration = duration
+            });
+
+            var positionTask = LMotion.Create(_camera.transform.position, targetPosition, duration)
+                .WithEase(_transitionEase)
+                .BindToPosition(_camera.transform)
+                .ToUniTask();
+
+            UniTask sizeTask = UniTask.CompletedTask;
             if (_camera.orthographic)
             {
-                LMotion.Create(_camera.orthographicSize, targetSize, duration)
-                    .WithEase(Ease.InOutCubic)
-                    .Bind(size => _camera.orthographicSize = size);
+                sizeTask = LMotion.Create(_camera.orthographicSize, targetSize, duration)
+                    .WithEase(_transitionEase)
+                    .Bind(size => _camera.orthographicSize = size)
+                    .ToUniTask();
             }
+
+            await UniTask.WhenAll(positionTask, sizeTask);
+
+            _cameraEvents?.NotifyCameraTransition(new CameraTransitionEvent
+            {
+                IsTransitioning = false,
+                TargetPosition = targetPosition,
+                Duration = 0
+            });
         }
 
         /// <summary>
-        /// カメラがターゲットを追従するように設定
+        /// 即座に位置を設定（遷移なし）
         /// </summary>
-        public void FollowTarget(Transform target)
+        public void SetPosition(Vector3 position)
         {
-            _targetTransform = target;
-            _followTarget = true;
+            position.z = _camera.transform.position.z;
+            _camera.transform.position = position;
         }
 
-        /// <summary>
-        /// カメラの追従を停止
-        /// </summary>
-        public void StopFollowing()
-        {
-            _followTarget = false;
-            _targetTransform = null;
-        }
-
-        private void OnDestroy()
+        public void Dispose()
         {
             _disposables?.Dispose();
         }

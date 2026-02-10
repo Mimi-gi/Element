@@ -1,32 +1,27 @@
 using UnityEngine;
-using VContainer;
+using System;
 using R3;
 using Element.Events;
 
 namespace Element.Managers
 {
     /// <summary>
-    /// 時間倍率を制御するマネージャー
+    /// 時間倍率を制御するマネージャー（POCO）
     /// </summary>
-    public class TimeManager : MonoBehaviour
+    public class TimeManager : IDisposable
     {
-        [Header("Time Settings")]
-        [SerializeField] private float _defaultTimeScale = 1.0f;
-        [SerializeField] private float _focusModeScale = 0.3f;
-
-        private IFocusEvents _focusEvents;
-        private ICameraEvents _cameraEvents;
+        private readonly IFocusEvents _focusEvents;
+        private readonly ICameraEvents _cameraEvents;
         private readonly CompositeDisposable _disposables = new();
 
-        [Inject]
-        public void Construct(IFocusEvents focusEvents, ICameraEvents cameraEvents)
+        private float _defaultTimeScale = 1.0f;
+        private float _focusModeScale = 0.3f;
+
+        public TimeManager(IFocusEvents focusEvents, ICameraEvents cameraEvents)
         {
             _focusEvents = focusEvents;
             _cameraEvents = cameraEvents;
-        }
 
-        private void Start()
-        {
             SubscribeToEvents();
         }
 
@@ -60,6 +55,16 @@ namespace Element.Managers
             Time.timeScale = scale;
         }
 
+        public void SetDefaultTimeScale(float scale)
+        {
+            _defaultTimeScale = scale;
+        }
+
+        public void SetFocusModeScale(float scale)
+        {
+            _focusModeScale = scale;
+        }
+
         public void EnterFocusMode()
         {
             SetTimeScale(_focusModeScale);
@@ -80,7 +85,7 @@ namespace Element.Managers
             SetTimeScale(_defaultTimeScale);
         }
 
-        private void OnDestroy()
+        public void Dispose()
         {
             _disposables?.Dispose();
         }

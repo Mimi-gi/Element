@@ -1,44 +1,44 @@
 using UnityEngine;
+using System;
 using System.Linq;
-using VContainer;
 using R3;
 using Cysharp.Threading.Tasks;
 using Element.Interfaces;
 using Element.Events;
+using VContainer;
 
 namespace Element.Managers
 {
     /// <summary>
-    /// 乗り移りシステムを管理するマネージャー
+    /// 乗り移りシステムを管理するマネージャー（POCO）
     /// </summary>
-    public class PossessionManager : MonoBehaviour
+    public class PossessionManager : IDisposable
     {
-        [Header("References")]
-        [SerializeField] private GameObject _darkPrefab;
-
-        private PossessionEvents _possessionEvents;
-        private IStageEvents _stageEvents;
-        private IGameStateEvents _gameStateEvents;
-        private InputProcessor _inputProcessor;
-
-        private IPossable _optimalTarget;
+        private readonly PossessionEvents _possessionEvents;
+        private readonly IStageEvents _stageEvents;
+        private readonly IGameStateEvents _gameStateEvents;
+        private readonly InputProcessor _inputProcessor;
+        private readonly IObjectResolver _resolver;
+        private readonly GameObject _darkPrefab;
         private readonly CompositeDisposable _disposables = new();
 
-        [Inject]
-        public void Construct(
+        private float _maxPossessionDistance = 10f;
+
+        public PossessionManager(
             PossessionEvents possessionEvents,
             IStageEvents stageEvents,
             IGameStateEvents gameStateEvents,
-            InputProcessor inputProcessor)
+            InputProcessor inputProcessor,
+            IObjectResolver resolver,
+            GameObject darkPrefab)
         {
             _possessionEvents = possessionEvents;
             _stageEvents = stageEvents;
             _gameStateEvents = gameStateEvents;
             _inputProcessor = inputProcessor;
-        }
+            _resolver = resolver;
+            _darkPrefab = darkPrefab;
 
-        private void Start()
-        {
             SubscribeToEvents();
         }
 
@@ -46,10 +46,70 @@ namespace Element.Managers
         {
             // 乗り移り入力購読
             _inputProcessor?.PossessInput
-                .Subscribe(_ => ExecutePossession())
+                .Subscribe(_ => OnPossessInput())
                 .AddTo(_disposables);
+        }
 
-            // TODO: フォーカスモード中の最適ターゲット更新
+        public void SetMaxPossessionDistance(float distance)
+        {
+            _maxPossessionDistance = distance;
+        }
+
+        /// <summary>
+        /// 乗り移り入力処理
+        /// </summary>
+        private void OnPossessInput()
+        {
+            var currentPossessed = _possessionEvents?.CurrentPossessed.CurrentValue;
+            if (currentPossessed == null) return;
+
+            // 最も近いターゲットを検索
+            IPossable nearestTarget = FindNearestPossessable(currentPossessed);
+
+            if (nearestTarget != null)
+            {
+                PossessTo(nearestTarget);
+            }
+            else
+            {
+                Debug.Log("No valid possession target found nearby.");
+            }
+        }
+
+        /// <summary>
+        /// 最も近い乗り移り可能オブジェクトを検索
+        /// </summary>
+        private IPossable FindNearestPossessable(IPossable current)
+        {
+            if (current?.Core == null) return null;
+
+            // シーン内のすべてのIPossableを検索
+            var allPossessables = GameObject.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None)
+                .OfType<IPossable>()
+                .Where(p => p != current) // 自分自身を除外
+                .Where(p => p.Layer < current.Layer) // 自分より低いレイヤーのみ
+                .Where(p => p.Core != null); // Coreが存在するもののみ
+
+            IPossable nearest = null;
+            float minDistance = _maxPossessionDistance;
+
+            foreach (var possessable in allPossessables)
+            {
+                float distance = Vector3.Distance(current.Core.position, possessable.Core.position);
+
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                    nearest = possessable;
+                }
+            }
+
+            if (nearest != null)
+            {
+                Debug.Log($"Found nearest target at distance: {minDistance:F2}");
+            }
+
+            return nearest;
         }
 
         /// <summary>
@@ -70,16 +130,22 @@ namespace Element.Managers
             {
                 oldPossessed.IsPossess = false;
 
+                // 物理設定を更新（Unpossess時）
+                if (oldPossessed is MonoBehaviour oldMb)
+                {
+                    oldPossessed.TryPossess(); // UpdatePhysicsSettingsを呼ぶため
+                }
+
                 // Darkなら破棄
                 if (oldPossessed is Dark dark)
                 {
-                    Destroy(dark.gameObject);
+                    UnityEngine.Object.Destroy(dark.gameObject);
                 }
             }
 
             // 新しいオブジェクトに乗り移る
             target.IsPossess = true;
-            target.TryPossess();
+            target.TryPossess(); // これでUpdatePhysicsSettingsが呼ばれる
 
             // イベント発行
             _possessionEvents.SetCurrentPossessed(target);
@@ -89,7 +155,7 @@ namespace Element.Managers
                 NewPossessed = target
             });
 
-            Debug.Log($"Possessed: {target.GetType().Name}");
+            Debug.Log($"Possessed: {target.GetType().Name} (Layer: {target.Layer})");
         }
 
         /// <summary>
@@ -132,29 +198,23 @@ namespace Element.Managers
             await UniTask.Delay(100);
 
             Vector3 spawnPos = darkSource.SpawnPosition;
-            GameObject darkObj = Instantiate(_darkPrefab, spawnPos, Quaternion.identity);
+            GameObject darkObj = UnityEngine.Object.Instantiate(_darkPrefab, spawnPos, Quaternion.identity);
             Dark dark = darkObj.GetComponent<Dark>();
 
             if (dark == null)
             {
                 Debug.LogError("Dark component not found on prefab!");
-                Destroy(darkObj);
+                UnityEngine.Object.Destroy(darkObj);
                 return;
             }
+
+            // VContainer注入
+            _resolver.Inject(dark);
 
             PossessTo(dark);
         }
 
-        private void ExecutePossession()
-        {
-            if (_optimalTarget != null)
-            {
-                PossessTo(_optimalTarget);
-                _optimalTarget = null;
-            }
-        }
-
-        private void OnDestroy()
+        public void Dispose()
         {
             _disposables?.Dispose();
         }

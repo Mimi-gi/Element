@@ -30,6 +30,16 @@ namespace Element.Interfaces
         Transform Core { get; }
 
         /// <summary>
+        /// 重力を適用するか（下に足場がない場合に落下するか）
+        /// </summary>
+        bool UseGravity { get; }
+
+        /// <summary>
+        /// 憑依されていない時にKinematicにするか（他オブジェクトと物理的に相互作用しないか）
+        /// </summary>
+        bool IsKinematicWhenNotPossessed { get; }
+
+        /// <summary>
         /// オブジェクトの死亡処理
         /// 乗り移り中でなくても呼ばれる可能性がある
         /// </summary>

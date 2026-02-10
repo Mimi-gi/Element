@@ -1,21 +1,21 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
-using VContainer;
+using System;
 using R3;
 using Element.Events;
 
 namespace Element.Managers
 {
     /// <summary>
-    /// InputSystemからの入力を受け取り、R3で配信するマネージャー
+    /// InputSystemからの入力を受け取り、R3で配信するマネージャー（POCO）
+    /// Observable.EveryUpdateでポーリング
     /// </summary>
-    public class InputProcessor : MonoBehaviour
+    public class InputProcessor : IDisposable
     {
-        [Header("Input")]
-        [SerializeField] private InputActionAsset _inputAsset;
-
-        private FocusEvents _focusEvents;
-        private IGameStateEvents _gameStateEvents;
+        private readonly InputActionAsset _inputAsset;
+        private readonly FocusEvents _focusEvents;
+        private readonly IGameStateEvents _gameStateEvents;
+        private readonly CompositeDisposable _disposables = new();
 
         #region 入力ストリーム
 
@@ -35,19 +35,25 @@ namespace Element.Managers
         private InputAction _jumpAction;
 
         private bool _inputEnabled = true;
-        private readonly CompositeDisposable _disposables = new();
+        private bool _wasFocusPressed;
 
-        [Inject]
-        public void Construct(FocusEvents focusEvents, IGameStateEvents gameStateEvents)
+        public InputProcessor(
+            InputActionAsset inputAsset,
+            FocusEvents focusEvents,
+            IGameStateEvents gameStateEvents)
         {
+            _inputAsset = inputAsset;
             _focusEvents = focusEvents;
             _gameStateEvents = gameStateEvents;
+
+            Initialize();
         }
 
-        private void Start()
+        private void Initialize()
         {
             SetupInputActions();
             SubscribeToGameState();
+            StartPolling();
         }
 
         private void SetupInputActions()
@@ -70,22 +76,47 @@ namespace Element.Managers
             _possessAction = actionMap.FindAction("Possess");
             _jumpAction = actionMap.FindAction("Jump");
 
-            if (_moveAction != null)
-                _moveAction.performed += OnMovePerformed;
-
-            if (_focusModeAction != null)
-            {
-                _focusModeAction.performed += _ => OnFocusModeChanged(true);
-                _focusModeAction.canceled += _ => OnFocusModeChanged(false);
-            }
-
-            if (_possessAction != null)
-                _possessAction.performed += _ => OnPossess();
-
-            if (_jumpAction != null)
-                _jumpAction.performed += _ => OnJump();
-
             actionMap.Enable();
+            Debug.Log("InputProcessor: actions set up");
+        }
+
+        private void StartPolling()
+        {
+            Observable.EveryUpdate()
+                .Subscribe(_ =>
+                {
+                    if (!_inputEnabled) return;
+
+                    // Move（連続値）
+                    if (_moveAction != null)
+                    {
+                        _move.Value = _moveAction.ReadValue<Vector2>();
+                    }
+
+                    // Possess（トリガー）
+                    if (_possessAction != null && _possessAction.WasPressedThisFrame())
+                    {
+                        _possessInput.OnNext(Unit.Default);
+                    }
+
+                    // Jump（トリガー）
+                    if (_jumpAction != null && _jumpAction.WasPressedThisFrame())
+                    {
+                        _jump.OnNext(Unit.Default);
+                    }
+
+                    // Focus（ホールド）
+                    if (_focusModeAction != null)
+                    {
+                        bool isPressed = _focusModeAction.IsPressed();
+                        if (isPressed != _wasFocusPressed)
+                        {
+                            _wasFocusPressed = isPressed;
+                            _focusEvents?.NotifyFocusModeChanged(isPressed);
+                        }
+                    }
+                })
+                .AddTo(_disposables);
         }
 
         private void SubscribeToGameState()
@@ -106,34 +137,6 @@ namespace Element.Managers
                 .AddTo(_disposables);
         }
 
-        #region 入力コールバック
-
-        private void OnMovePerformed(InputAction.CallbackContext context)
-        {
-            if (!_inputEnabled) return;
-            _move.Value = context.ReadValue<Vector2>();
-        }
-
-        private void OnFocusModeChanged(bool isActive)
-        {
-            if (!_inputEnabled) return;
-            _focusEvents?.NotifyFocusModeChanged(isActive);
-        }
-
-        private void OnPossess()
-        {
-            if (!_inputEnabled) return;
-            _possessInput.OnNext(Unit.Default);
-        }
-
-        private void OnJump()
-        {
-            if (!_inputEnabled) return;
-            _jump.OnNext(Unit.Default);
-        }
-
-        #endregion
-
         public void EnableInput()
         {
             _inputEnabled = true;
@@ -145,15 +148,12 @@ namespace Element.Managers
             _move.Value = Vector2.zero;
         }
 
-        private void OnDestroy()
+        public void Dispose()
         {
             _disposables?.Dispose();
             _possessInput?.Dispose();
             _jump?.Dispose();
             _move?.Dispose();
-
-            if (_moveAction != null)
-                _moveAction.performed -= OnMovePerformed;
         }
     }
 }

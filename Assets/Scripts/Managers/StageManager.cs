@@ -1,32 +1,49 @@
 using UnityEngine;
+using System;
 using System.Collections.Generic;
-using VContainer;
+using Cysharp.Threading.Tasks;
 using Element.Events;
 
 namespace Element.Managers
 {
     /// <summary>
-    /// ステージとエリアを管理するマネージャー
+    /// ステージとエリアを管理するマネージャー（POCO）
     /// </summary>
-    public class StageManager : MonoBehaviour
+    public class StageManager : IDisposable
     {
-        [Header("Dark Sources")]
-        [SerializeField] private DarkSource _initialDarkSource;
+        private readonly StageEvents _stageEvents;
+        private readonly Dictionary<string, DarkSource> _darkSources = new();
+        private DarkSource _initialDarkSource;
 
-        private StageEvents _stageEvents;
-        private Dictionary<string, DarkSource> _darkSources = new Dictionary<string, DarkSource>();
-
-        [Inject]
-        public void Construct(StageEvents stageEvents)
+        public StageManager(StageEvents stageEvents)
         {
             _stageEvents = stageEvents;
         }
 
-        private void Start()
+        /// <summary>
+        /// DarkSourceの配列を登録
+        /// </summary>
+        public void RegisterDarkSources(DarkSource[] sources, DarkSource initialSource = null)
         {
-            if (_initialDarkSource != null)
+            foreach (var source in sources)
             {
-                SetActiveDarkSource(_initialDarkSource);
+                RegisterDarkSource(source.AreaId, source);
+                Debug.Log($"Registered DarkSource: {source.name} with ID: {source.AreaId}");
+            }
+
+            // 初期DarkSourceを設定
+            if (initialSource != null)
+            {
+                _initialDarkSource = initialSource;
+                SetActiveDarkSource(initialSource);
+            }
+            else if (_darkSources.Count > 0)
+            {
+                // 初期DarkSourceが指定されていない場合、最初に見つかったものを使用
+                var firstSource = new List<DarkSource>(_darkSources.Values)[0];
+                _initialDarkSource = firstSource;
+                SetActiveDarkSource(firstSource);
+                Debug.LogWarning($"No initial DarkSource set, using first found: {firstSource.name}");
             }
         }
 
@@ -86,5 +103,37 @@ namespace Element.Managers
                 SetActiveDarkSource(darkSource);
             }
         }
+
+        /// <summary>
+        /// 現在アクティブなDarkSourceを取得
+        /// </summary>
+        public DarkSource GetCurrentDarkSource()
+        {
+            return _stageEvents?.ActiveDarkSource.CurrentValue;
+        }
+
+        /// <summary>
+        /// エリアに遷移（async/await可能）
+        /// </summary>
+        public async UniTask TransitionToAreaAsync(string areaId, float waitDuration = 0f)
+        {
+            var darkSource = GetDarkSource(areaId);
+            if (darkSource != null)
+            {
+                SetActiveDarkSource(darkSource);
+
+                // 演出待ち
+                if (waitDuration > 0)
+                {
+                    await UniTask.Delay((int)(waitDuration * 1000));
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            // 必要に応じてクリーンアップ
+        }
     }
 }
+
