@@ -1,5 +1,6 @@
 using UnityEngine;
 using System;
+using R3;
 using Cysharp.Threading.Tasks;
 using Element.Enums;
 using Element.Events;
@@ -12,10 +13,22 @@ namespace Element.Managers
     public class GameStateManager : IDisposable
     {
         private readonly GameStateEvents _gameStateEvents;
+        private readonly CompositeDisposable _disposables = new();
 
-        public GameStateManager(GameStateEvents gameStateEvents)
+        public GameStateManager(GameStateEvents gameStateEvents, IFocusEvents focusEvents)
         {
             _gameStateEvents = gameStateEvents;
+
+            // フォーカスモード連動
+            focusEvents?.OnFocusModeChanged
+                .Subscribe(isFocusing =>
+                {
+                    if (isFocusing)
+                        ChangeState(GameState.FocusMode);
+                    else
+                        ChangeState(GameState.Playing);
+                })
+                .AddTo(_disposables);
         }
 
         /// <summary>
@@ -35,7 +48,6 @@ namespace Element.Managers
             _gameStateEvents.ChangeState(newState);
             Debug.Log($"Game state changed to: {newState}");
 
-            // 演出待ち
             if (waitDuration > 0)
             {
                 await UniTask.Delay((int)(waitDuration * 1000));
@@ -52,7 +64,7 @@ namespace Element.Managers
 
         public void Dispose()
         {
-            // 必要に応じてクリーンアップ
+            _disposables?.Dispose();
         }
     }
 }

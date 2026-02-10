@@ -87,10 +87,10 @@ namespace Element.Managers
                 {
                     if (!_inputEnabled) return;
 
-                    // Move（連続値）
+                    // Move（連続値）— フォーカス中は移動不可
                     if (_moveAction != null)
                     {
-                        _move.Value = _moveAction.ReadValue<Vector2>();
+                        _move.Value = _wasFocusPressed ? Vector2.zero : _moveAction.ReadValue<Vector2>();
                     }
 
                     // Possess（トリガー）

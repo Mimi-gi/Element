@@ -6,6 +6,7 @@ using Cysharp.Threading.Tasks;
 using Element.Interfaces;
 using Element.Events;
 using VContainer;
+using Element;
 
 namespace Element.Managers
 {
@@ -17,27 +18,36 @@ namespace Element.Managers
         private readonly PossessionEvents _possessionEvents;
         private readonly IStageEvents _stageEvents;
         private readonly IGameStateEvents _gameStateEvents;
+        private readonly IFocusEvents _focusEvents;
         private readonly InputProcessor _inputProcessor;
         private readonly IObjectResolver _resolver;
+        private readonly FocusCircle _focusCircle;
         private readonly GameObject _darkPrefab;
         private readonly CompositeDisposable _disposables = new();
 
-        private float _maxPossessionDistance = 10f;
+        private bool _isFocusMode;
 
         public PossessionManager(
             PossessionEvents possessionEvents,
             IStageEvents stageEvents,
             IGameStateEvents gameStateEvents,
+            IFocusEvents focusEvents,
             InputProcessor inputProcessor,
             IObjectResolver resolver,
+            FocusCircle focusCircle,
             GameObject darkPrefab)
         {
             _possessionEvents = possessionEvents;
             _stageEvents = stageEvents;
             _gameStateEvents = gameStateEvents;
+            _focusEvents = focusEvents;
             _inputProcessor = inputProcessor;
             _resolver = resolver;
+            _focusCircle = focusCircle;
             _darkPrefab = darkPrefab;
+
+            // 初期状態は非アクティブ
+            _focusCircle?.Deactivate();
 
             SubscribeToEvents();
         }
@@ -48,11 +58,28 @@ namespace Element.Managers
             _inputProcessor?.PossessInput
                 .Subscribe(_ => OnPossessInput())
                 .AddTo(_disposables);
-        }
 
-        public void SetMaxPossessionDistance(float distance)
-        {
-            _maxPossessionDistance = distance;
+            // フォーカスモード状態追跡 + FocusCircle制御
+            _focusEvents?.OnFocusModeChanged
+                .Subscribe(isFocusing =>
+                {
+                    _isFocusMode = isFocusing;
+
+                    if (isFocusing)
+                    {
+                        // 現在の憑依先の位置にFocusCircleを有効化
+                        var current = _possessionEvents?.CurrentPossessed.CurrentValue;
+                        if (current?.Core != null)
+                        {
+                            _focusCircle?.Activate(current.Core.position);
+                        }
+                    }
+                    else
+                    {
+                        _focusCircle?.Deactivate();
+                    }
+                })
+                .AddTo(_disposables);
         }
 
         /// <summary>
@@ -60,11 +87,13 @@ namespace Element.Managers
         /// </summary>
         private void OnPossessInput()
         {
+            if (!_isFocusMode) return; // フォーカス中のみ
+
             var currentPossessed = _possessionEvents?.CurrentPossessed.CurrentValue;
             if (currentPossessed == null) return;
 
-            // 最も近いターゲットを検索
-            IPossable nearestTarget = FindNearestPossessable(currentPossessed);
+            // FocusCircleの候補から最も近いターゲットを検索
+            IPossable nearestTarget = _focusCircle?.GetNearest(currentPossessed);
 
             if (nearestTarget != null)
             {
@@ -74,42 +103,6 @@ namespace Element.Managers
             {
                 Debug.Log("No valid possession target found nearby.");
             }
-        }
-
-        /// <summary>
-        /// 最も近い乗り移り可能オブジェクトを検索
-        /// </summary>
-        private IPossable FindNearestPossessable(IPossable current)
-        {
-            if (current?.Core == null) return null;
-
-            // シーン内のすべてのIPossableを検索
-            var allPossessables = GameObject.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None)
-                .OfType<IPossable>()
-                .Where(p => p != current) // 自分自身を除外
-                .Where(p => p.Layer < current.Layer) // 自分より低いレイヤーのみ
-                .Where(p => p.Core != null); // Coreが存在するもののみ
-
-            IPossable nearest = null;
-            float minDistance = _maxPossessionDistance;
-
-            foreach (var possessable in allPossessables)
-            {
-                float distance = Vector3.Distance(current.Core.position, possessable.Core.position);
-
-                if (distance < minDistance)
-                {
-                    minDistance = distance;
-                    nearest = possessable;
-                }
-            }
-
-            if (nearest != null)
-            {
-                Debug.Log($"Found nearest target at distance: {minDistance:F2}");
-            }
-
-            return nearest;
         }
 
         /// <summary>

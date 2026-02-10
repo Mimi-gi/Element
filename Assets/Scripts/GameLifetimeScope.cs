@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Rendering;
 using VContainer;
 using VContainer.Unity;
 using Element.Events;
@@ -17,6 +18,12 @@ public class GameLifetimeScope : LifetimeScope
 
     [Header("Stage")]
     [SerializeField] private DarkSource[] _darkSources;
+
+    [Header("Visual")]
+    [SerializeField] private Volume _focusVolume;
+
+    [Header("Focus")]
+    [SerializeField] private Element.FocusCircle _focusCircle;
 
     protected override void Awake()
     {
@@ -77,16 +84,27 @@ public class GameLifetimeScope : LifetimeScope
             );
         }, Lifetime.Singleton);
 
-        // PossessionManager with DarkPrefab injection
+        // PossessionManager with FocusCircle injection
         builder.Register<PossessionManager>(container =>
         {
             return new PossessionManager(
                 container.Resolve<PossessionEvents>(),
                 container.Resolve<IStageEvents>(),
                 container.Resolve<IGameStateEvents>(),
+                container.Resolve<IFocusEvents>(),
                 container.Resolve<Element.Managers.InputProcessor>(),
                 container,
+                _focusCircle,
                 _darkPrefab
+            );
+        }, Lifetime.Singleton);
+
+        // FocusVisualController with Volume injection
+        builder.Register<Element.Managers.FocusVisualController>(container =>
+        {
+            return new Element.Managers.FocusVisualController(
+                _focusVolume,
+                container.Resolve<IFocusEvents>()
             );
         }, Lifetime.Singleton);
 

@@ -6,7 +6,7 @@ namespace Element.Posseables
     /// <summary>
     /// テスト用のBox（乗り移り可能）
     /// </summary>
-    public class Box : MonoBehaviour, IPossable,IGround
+    public class Box : MonoBehaviour, IPossable, IGround
     {
         [Header("IPossable Settings")]
         [SerializeField] private int _layer = 1;
@@ -15,6 +15,8 @@ namespace Element.Posseables
         [Header("Physics Settings")]
         [SerializeField] private bool _useGravity = true;
         [SerializeField] private bool _isKinematicWhenNotPossessed = true;
+        [Header("Animator")]
+        [SerializeField] private Animator _animator;
 
         private Rigidbody2D _rb;
 
