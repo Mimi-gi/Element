@@ -88,7 +88,10 @@ namespace Element
             await UniTask.Delay(100);
 
             // 3. 初期Possessionを設定
-            _possessionManager?.PossessTo(dark);
+            if (_possessionManager != null)
+            {
+                await _possessionManager.PossessTo(dark);
+            }
 
             // 4. カメラ初期位置を設定
             if (dark.Core != null)

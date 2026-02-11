@@ -35,9 +35,14 @@ namespace Element.Interfaces
         bool UseGravity { get; }
 
         /// <summary>
-        /// 憑依されていない時にKinematicにするか（他オブジェクトと物理的に相互作用しないか）
+        /// 憑依されていない時にConstraintで位置を固定するか
         /// </summary>
-        bool IsKinematicWhenNotPossessed { get; }
+        bool FreezeWhenNotPossessed { get; }
+
+        /// <summary>
+        /// Eyeの相対位置（乗り移り時にEyeをこの位置に配置する）
+        /// </summary>
+        Vector2 EyePos { get; }
 
         /// <summary>
         /// オブジェクトの死亡処理

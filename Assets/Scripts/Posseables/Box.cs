@@ -1,5 +1,8 @@
 using UnityEngine;
 using Element.Interfaces;
+using Element.Managers;
+using System;
+using R3;
 
 namespace Element.Posseables
 {
@@ -14,17 +17,21 @@ namespace Element.Posseables
 
         [Header("Physics Settings")]
         [SerializeField] private bool _useGravity = true;
-        [SerializeField] private bool _isKinematicWhenNotPossessed = true;
+        [SerializeField] private bool _freezeWhenNotPossessed = true;
         [Header("Animator")]
         [SerializeField] private Animator _animator;
 
-        private Rigidbody2D _rb;
+        [Header("Eye Settings")]
+        [SerializeField] private Vector2 _eyePos;
 
+        private Rigidbody2D _rb;
+        private InputProcessor _inputProcessor;
         public int Layer => _layer;
         public bool IsPossess { get; set; }
         public Transform Core => _core != null ? _core : transform;
         public bool UseGravity => _useGravity;
-        public bool IsKinematicWhenNotPossessed => _isKinematicWhenNotPossessed;
+        public bool FreezeWhenNotPossessed => _freezeWhenNotPossessed;
+        public Vector2 EyePos => _eyePos;
 
         private void Awake()
         {
@@ -59,14 +66,14 @@ namespace Element.Posseables
             // 重力設定
             _rb.gravityScale = UseGravity ? 1f : 0f;
 
-            // Kinematic設定（憑依されていない時）
-            if (!IsPossess && IsKinematicWhenNotPossessed)
+            // Constraint設定（憑依されていない時はX,Yを固定）
+            if (!IsPossess && FreezeWhenNotPossessed)
             {
-                _rb.bodyType = RigidbodyType2D.Kinematic;
+                _rb.constraints = RigidbodyConstraints2D.FreezePositionX | RigidbodyConstraints2D.FreezePositionY;
             }
             else
             {
-                _rb.bodyType = RigidbodyType2D.Dynamic;
+                _rb.constraints = RigidbodyConstraints2D.None;
             }
         }
 

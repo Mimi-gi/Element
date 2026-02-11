@@ -6,6 +6,7 @@ using VContainer.Unity;
 using Element.Events;
 using Element.Managers;
 using Cysharp.Threading.Tasks;
+using UnityEngine.VFX;
 
 public class GameLifetimeScope : LifetimeScope
 {
@@ -25,8 +26,24 @@ public class GameLifetimeScope : LifetimeScope
     [Header("Focus")]
     [SerializeField] private Element.FocusCircle _focusCircle;
 
+    [Header("Eye")]
+    [SerializeField] private Element.Eye _eyePrefab;
+
+    [Header("Possession VFX")]
+    [SerializeField] private VisualEffect _possessionVfxPrefab;
+
+    private VisualEffect _possessionVfxInstance;
+
     protected override void Awake()
     {
+        // VFXインスタンス生成（使い回し用）
+        if (_possessionVfxPrefab != null)
+        {
+            _possessionVfxInstance = Instantiate(_possessionVfxPrefab);
+            _possessionVfxInstance.Stop();
+            _possessionVfxInstance.gameObject.SetActive(false);
+        }
+
         // VContainer Build
         base.Awake();
 
@@ -95,7 +112,9 @@ public class GameLifetimeScope : LifetimeScope
                 container.Resolve<Element.Managers.InputProcessor>(),
                 container,
                 _focusCircle,
-                _darkPrefab
+                _darkPrefab,
+                _eyePrefab,
+                _possessionVfxInstance
             );
         }, Lifetime.Singleton);
 

@@ -385,6 +385,52 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1551900461
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1551900463}
+  - component: {fileID: 1551900462}
+  m_Layer: 0
+  m_Name: Elevator
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1551900462
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1551900461}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d8ad04c4edb21f54e88c6125534be7da, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VerticalMover
+  _moveSpeed: 5
+  _rb: {fileID: 0}
+--- !u!4 &1551900463
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1551900461}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -1.89845, y: -2.41312, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1643533349
 GameObject:
   m_ObjectHideFlags: 0
@@ -398,6 +444,8 @@ GameObject:
   - component: {fileID: 1643533352}
   - component: {fileID: 1643533353}
   - component: {fileID: 1643533354}
+  - component: {fileID: 1643533355}
+  - component: {fileID: 1643533356}
   m_Layer: 0
   m_Name: Box
   m_TagString: Untagged
@@ -435,8 +483,9 @@ MonoBehaviour:
   _layer: 1
   _core: {fileID: 1643533350}
   _useGravity: 1
-  _isKinematicWhenNotPossessed: 0
+  _freezeWhenNotPossessed: 1
   _animator: {fileID: 0}
+  _eyePos: {x: 0, y: 0}
 --- !u!212 &1643533352
 SpriteRenderer:
   serializedVersion: 2
@@ -522,7 +571,7 @@ Rigidbody2D:
   m_Interpolate: 0
   m_SleepingMode: 1
   m_CollisionDetection: 0
-  m_Constraints: 7
+  m_Constraints: 4
 --- !u!60 &1643533354
 PolygonCollider2D:
   m_ObjectHideFlags: 0
@@ -561,7 +610,7 @@ PolygonCollider2D:
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 0.96875, y: 0.96875}
+    oldSize: {x: 1, y: 1}
     newSize: {x: 0.96875, y: 0.96875}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
@@ -575,6 +624,36 @@ PolygonCollider2D:
       - {x: 0.421875, y: 0.484375}
       - {x: -0.484375, y: -0.421875}
   m_UseDelaunayMesh: 1
+--- !u!114 &1643533355
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1643533349}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6cae073ace4af35459d0d166ad11bb03, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HorizontalMover
+  _moveSpeed: 5
+  _rb: {fileID: 1643533353}
+--- !u!114 &1643533356
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1643533349}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4ad77262924150b408e20cb00c424032, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GroundChecker
+  _leftRayOffset: {x: -0.4, y: 0}
+  _rightRayOffset: {x: 0.4, y: 0}
+  _rayLength: 0.6
+  _fallSpeed: 10
 --- !u!1 &1734817281
 GameObject:
   m_ObjectHideFlags: 0
@@ -588,6 +667,9 @@ GameObject:
   - component: {fileID: 1734817284}
   - component: {fileID: 1734817283}
   - component: {fileID: 1734817282}
+  - component: {fileID: 1734817288}
+  - component: {fileID: 1734817287}
+  - component: {fileID: 1734817289}
   m_Layer: 0
   m_Name: Box (1)
   m_TagString: Untagged
@@ -633,7 +715,7 @@ PolygonCollider2D:
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 0.96875, y: 0.96875}
+    oldSize: {x: 1, y: 1}
     newSize: {x: 0.96875, y: 0.96875}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
@@ -673,7 +755,7 @@ Rigidbody2D:
   m_Interpolate: 0
   m_SleepingMode: 1
   m_CollisionDetection: 0
-  m_Constraints: 7
+  m_Constraints: 4
 --- !u!212 &1734817284
 SpriteRenderer:
   serializedVersion: 2
@@ -748,8 +830,9 @@ MonoBehaviour:
   _layer: 1
   _core: {fileID: 1734817286}
   _useGravity: 1
-  _isKinematicWhenNotPossessed: 0
+  _freezeWhenNotPossessed: 1
   _animator: {fileID: 0}
+  _eyePos: {x: 0, y: 0}
 --- !u!4 &1734817286
 Transform:
   m_ObjectHideFlags: 0
@@ -765,6 +848,50 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1734817287
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1734817281}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4ad77262924150b408e20cb00c424032, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GroundChecker
+  _leftRayOffset: {x: -0.4, y: 0}
+  _rightRayOffset: {x: 0.4, y: 0}
+  _rayLength: 0.6
+  _fallSpeed: 10
+--- !u!114 &1734817288
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1734817281}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6cae073ace4af35459d0d166ad11bb03, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HorizontalMover
+  _moveSpeed: 5
+  _rb: {fileID: 1734817283}
+--- !u!114 &1734817289
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1734817281}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d8ad04c4edb21f54e88c6125534be7da, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VerticalMover
+  _moveSpeed: 5
+  _rb: {fileID: 1734817283}
 --- !u!1 &1759037334
 GameObject:
   m_ObjectHideFlags: 0
@@ -820,6 +947,8 @@ MonoBehaviour:
   - {fileID: 172947798}
   _focusVolume: {fileID: 0}
   _focusCircle: {fileID: 1852446416}
+  _eyePrefab: {fileID: 1814005177111230981, guid: 792a6e204b4bc7545b1f29b6e18c676d, type: 3}
+  _possessionVfxPrefab: {fileID: 7980213664223794805, guid: 55bce0d486982b24a893dc425e8bc018, type: 3}
 --- !u!1 &1852446412
 GameObject:
   m_ObjectHideFlags: 0
@@ -2493,3 +2622,4 @@ SceneRoots:
   - {fileID: 1643533350}
   - {fileID: 1734817286}
   - {fileID: 1852446414}
+  - {fileID: 1551900463}
